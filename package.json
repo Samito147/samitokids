@@ -1,0 +1,13 @@
+{
+  "name": "presell-turbo",
+  "version": "1.0.0",
+  "description": "Presell Criança Modo Turbo",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^5.4.21"
+  }
+}
