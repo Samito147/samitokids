@@ -102,6 +102,12 @@
    - Watchdog de recuperação do HERO para stall/buffer freeze
    - Fallback seguro do gate no MOBILE para evitar travamento perpétuo se o browser congelar o vídeo
    - Desktop preservado EXATAMENTE como está
+
+   ✅ FIX MOBILE 3 (2026-03-16) — APLICADO AGORA:
+   - Recovery destrutivo do HERO removido no mobile (sem load())
+   - Não tratar suspend como erro no mobile
+   - Gesto explícito no HERO/overlay pode liberar áudio mesmo durante o gate
+   - Desktop preservado EXATAMENTE como está
    ========================================================================== */
 
 (() => {
@@ -1568,10 +1574,10 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
       });
     },
 
-    unlockHeroAudioNow() {
+    unlockHeroAudioNow(forceDuringMobileGate = false) {
       if (!VIDEO_MANAGER.heroVideo) return;
 
-      if (VIDEO_MANAGER.shouldKeepHeroMutedOnMobileGate()) {
+      if (!forceDuringMobileGate && VIDEO_MANAGER.shouldKeepHeroMutedOnMobileGate()) {
         return;
       }
 
@@ -1602,6 +1608,11 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
       VIDEO_MANAGER.audioUnlockHandled = true;
       VIDEO_MANAGER.pendingMobileGateAudioUnlock = false;
       log("Audio unlocked by:", source);
+
+      if (isMobileGate && isExplicitHeroGesture) {
+        VIDEO_MANAGER.unlockHeroAudioNow(true);
+        return;
+      }
 
       VIDEO_MANAGER.unlockHeroAudioNow();
       VIDEO_MANAGER.unlockAudioForPlayingVideos();
@@ -1781,49 +1792,15 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
       if (now - VIDEO_MANAGER.mobileHeroLastRecoveryTs < CONFIG.MOBILE_HERO_RECOVERY_COOLDOWN_MS) return;
       VIDEO_MANAGER.mobileHeroLastRecoveryTs = now;
 
-      const restoreTime = Number(v.currentTime || 0);
-      const shouldKeepMuted = VIDEO_MANAGER.shouldKeepHeroMutedOnMobileGate() || !VIDEO_MANAGER.audioUnlocked;
+      log("Mobile hero recovery:", reason, Number(v.currentTime || 0));
 
-      log("Mobile hero recovery:", reason, restoreTime);
-
-      if (shouldKeepMuted) {
+      if (VIDEO_MANAGER.shouldKeepHeroMutedOnMobileGate() || !VIDEO_MANAGER.audioUnlocked) {
         VIDEO_MANAGER.forceHeroMutedForAutoplay();
       } else {
         VIDEO_MANAGER.unmuteVideo(v);
       }
 
-      VIDEO_MANAGER.safePlay(v).then((ok) => {
-        if (ok) return;
-
-        try {
-          VIDEO_MANAGER.mobileHeroRestoreTimePending = restoreTime;
-
-          const restoreAndPlay = () => {
-            try {
-              const t = Number(VIDEO_MANAGER.mobileHeroRestoreTimePending || 0);
-              if (t > 0 && Number.isFinite(t)) {
-                v.currentTime = t;
-              }
-            } catch (_) {}
-
-            if (shouldKeepMuted) {
-              VIDEO_MANAGER.forceHeroMutedForAutoplay();
-            } else {
-              VIDEO_MANAGER.unmuteVideo(v);
-            }
-
-            VIDEO_MANAGER.safePlay(v);
-
-            try { v.removeEventListener("loadedmetadata", restoreAndPlay); } catch (_) {}
-            try { v.removeEventListener("canplay", restoreAndPlay); } catch (_) {}
-            VIDEO_MANAGER.mobileHeroRestoreTimePending = null;
-          };
-
-          v.addEventListener("loadedmetadata", restoreAndPlay);
-          v.addEventListener("canplay", restoreAndPlay);
-          v.load();
-        } catch (_) {}
-      });
+      VIDEO_MANAGER.safePlay(v);
     },
 
     bindMobileHeroRecovery() {
@@ -1850,7 +1827,6 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
 
       v.addEventListener("waiting", () => VIDEO_MANAGER.attemptMobileHeroRecovery("waiting"));
       v.addEventListener("stalled", () => VIDEO_MANAGER.attemptMobileHeroRecovery("stalled"));
-      v.addEventListener("suspend", () => VIDEO_MANAGER.attemptMobileHeroRecovery("suspend"));
 
       VIDEO_MANAGER.mobileHeroRecoveryInterval = window.setInterval(() => {
         const hero = VIDEO_MANAGER.heroVideo;
