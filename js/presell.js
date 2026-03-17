@@ -90,6 +90,12 @@
    - NÃO tenta clique fake no vídeo (browser bloqueia por não ser trusted)
    - Na PRIMEIRA interação real em qualquer parte da página, desmuta o HERO diretamente
    - Usa pointerdown global para funcionar melhor em mobile/desktop
+
+   ✅ FIX MOBILE (2026-03-16) — APLICADO AGORA:
+   - Somente no MOBILE, o HERO não tenta autoplay com som primeiro
+   - Somente no MOBILE, enquanto o CONTENT GATE estiver ativo, o HERO permanece mutado
+   - Somente no MOBILE, a primeira interação não força desmute do HERO durante o gate
+   - Desktop preservado EXATAMENTE com o comportamento anterior
    ========================================================================== */
 
 (() => {
@@ -217,6 +223,18 @@
       return CONFIG.DEST_ALLOWLIST_HOSTS.map((h) => h.toLowerCase()).includes(host);
     } catch (e) {
       return false;
+    }
+  };
+
+  const ENV = {
+    isMobile() {
+      try {
+        const byMedia = window.matchMedia("(max-width: 991px), (hover: none) and (pointer: coarse)").matches;
+        const byUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(navigator.userAgent || "");
+        return byMedia || byUA;
+      } catch (_) {
+        return false;
+      }
     }
   };
 
@@ -1383,6 +1401,7 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
     bound: false,
     audioUnlocked: false,
     audioUnlockHandled: false,
+    pendingMobileGateAudioUnlock: false,
     heroSection: null,
     testimonialsSection: null,
     heroVideo: null,
@@ -1391,6 +1410,20 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
 
     getAllVideos() {
       return $$("video.hero-video");
+    },
+
+    isMobileContext() {
+      return ENV.isMobile();
+    },
+
+    shouldKeepHeroMutedOnMobileGate() {
+      return VIDEO_MANAGER.isMobileContext() && CONTENT_GATE.enabled && !CONTENT_GATE.unlocked;
+    },
+
+    shouldTryHeroAutoplayWithSoundFirst() {
+      if (!CONFIG.VIDEO_TRY_AUTOPLAY_WITH_SOUND_FIRST) return false;
+      if (VIDEO_MANAGER.isMobileContext()) return false;
+      return true;
     },
 
     safePause(v) {
@@ -1451,6 +1484,10 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
       if (!videoEl) return;
       if (!VIDEO_MANAGER.audioUnlocked) return;
 
+      if (VIDEO_MANAGER.shouldKeepHeroMutedOnMobileGate() && videoEl === VIDEO_MANAGER.heroVideo) {
+        return;
+      }
+
       VIDEO_MANAGER.unmuteVideo(videoEl);
       VIDEO_MANAGER.safePlay(videoEl);
     },
@@ -1460,6 +1497,10 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
         if (!videoEl) return;
         if (!VIDEO_MANAGER.isPlaying(videoEl)) return;
 
+        if (VIDEO_MANAGER.shouldKeepHeroMutedOnMobileGate() && videoEl === VIDEO_MANAGER.heroVideo) {
+          return;
+        }
+
         VIDEO_MANAGER.unmuteVideo(videoEl);
         VIDEO_MANAGER.safePlay(videoEl);
       });
@@ -1467,6 +1508,10 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
 
     unlockHeroAudioNow() {
       if (!VIDEO_MANAGER.heroVideo) return;
+
+      if (VIDEO_MANAGER.shouldKeepHeroMutedOnMobileGate()) {
+        return;
+      }
 
       VIDEO_MANAGER.unmuteVideo(VIDEO_MANAGER.heroVideo);
 
@@ -1481,8 +1526,16 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
 
       if (nativeEvent && nativeEvent.isTrusted === false) return;
 
+      if (VIDEO_MANAGER.shouldKeepHeroMutedOnMobileGate()) {
+        VIDEO_MANAGER.pendingMobileGateAudioUnlock = true;
+        VIDEO_MANAGER.audioUnlockHandled = true;
+        log("Audio unlock deferred by mobile gate:", source);
+        return;
+      }
+
       VIDEO_MANAGER.audioUnlocked = true;
       VIDEO_MANAGER.audioUnlockHandled = true;
+      VIDEO_MANAGER.pendingMobileGateAudioUnlock = false;
       log("Audio unlocked by:", source);
 
       VIDEO_MANAGER.unlockHeroAudioNow();
@@ -1647,7 +1700,7 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
       const tryStartHero = () => {
         if (!v || VIDEO_MANAGER.isPlaying(v)) return;
 
-        const tryWithSound = CONFIG.VIDEO_TRY_AUTOPLAY_WITH_SOUND_FIRST
+        const tryWithSound = VIDEO_MANAGER.shouldTryHeroAutoplayWithSoundFirst()
           ? VIDEO_MANAGER.tryHeroAutoplayWithSoundFirst()
           : Promise.resolve(false);
 
