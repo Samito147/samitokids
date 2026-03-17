@@ -108,6 +108,11 @@
    - Não tratar suspend como erro no mobile
    - Gesto explícito no HERO/overlay pode liberar áudio mesmo durante o gate
    - Desktop preservado EXATAMENTE como está
+
+   ✅ FIX MOBILE 4 (2026-03-16) — APLICADO AGORA:
+   - No MOBILE, conteúdo fica sempre liberado desde o primeiro carregamento
+   - No MOBILE, todos os botões de compra ficam ocultos, exceto o último
+   - Desktop preservado EXATAMENTE como está
    ========================================================================== */
 
 (() => {
@@ -252,6 +257,54 @@
         return byMedia || byUA;
       } catch (_) {
         return false;
+      }
+    }
+  };
+
+  /* ===========================
+     ✅ MOBILE CTA VISIBILITY
+     =========================== */
+
+  const MOBILE_CTA_VISIBILITY = {
+    injected: false,
+
+    injectCSS() {
+      if (MOBILE_CTA_VISIBILITY.injected) return;
+      MOBILE_CTA_VISIBILITY.injected = true;
+
+      const css = `
+.mobile-cta-hidden{
+  display: none !important;
+}
+      `.trim();
+
+      const style = document.createElement("style");
+      style.setAttribute("data-presell", "mobile-cta-visibility");
+      style.textContent = css;
+      document.head.appendChild(style);
+    },
+
+    bind() {
+      if (!ENV.isMobile()) return;
+
+      MOBILE_CTA_VISIBILITY.injectCSS();
+
+      const buttons = $$("[data-outbound='1']");
+      if (!buttons.length) return;
+
+      const lastButton = buttons[buttons.length - 1] || null;
+
+      buttons.forEach((btn) => {
+        if (btn !== lastButton) {
+          btn.classList.add("mobile-cta-hidden");
+        } else {
+          btn.classList.remove("mobile-cta-hidden");
+        }
+      });
+
+      const sticky = $(".sticky-cta");
+      if (sticky && (!lastButton || !sticky.contains(lastButton))) {
+        sticky.classList.add("mobile-cta-hidden");
       }
     }
   };
@@ -458,6 +511,12 @@ body.gate-on{
 
     bind() {
       if (!CONTENT_GATE.enabled) return;
+
+      if (ENV.isMobile()) {
+        CONTENT_GATE.unlocked = true;
+        log("Content gate bypassed on mobile.");
+        return;
+      }
 
       if (CONTENT_GATE.isSessionUnlocked()) {
         CONTENT_GATE.unlocked = true;
@@ -2346,6 +2405,7 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
       VIDEO_UI.bind();
       VIDEO_GALLERY.bind();
       HERO_VIDEO_PIXEL.bind();
+      MOBILE_CTA_VISIBILITY.bind();
 
       INIT.fireInitialPixels();
       OUTBOUND.bind();
