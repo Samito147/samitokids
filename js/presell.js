@@ -91,35 +91,14 @@
    - Na PRIMEIRA interação real em qualquer parte da página, desmuta o HERO diretamente
    - Usa pointerdown global para funcionar melhor em mobile/desktop
 
-   ✅ FIX MOBILE (2026-03-16) — APLICADO AGORA:
-   - Somente no MOBILE, o HERO não tenta autoplay com som primeiro
-   - Somente no MOBILE, enquanto o CONTENT GATE estiver ativo, o HERO permanece mutado
-   - Somente no MOBILE, a primeira interação não força desmute do HERO durante o gate
-   - Desktop preservado EXATAMENTE com o comportamento anterior
-
-   ✅ FIX MOBILE 2 (2026-03-16) — APLICADO AGORA:
-   - Somente no MOBILE, gesto explícito no HERO/overlay volta a liberar áudio durante o gate
-   - Watchdog de recuperação do HERO para stall/buffer freeze
-   - Fallback seguro do gate no MOBILE para evitar travamento perpétuo se o browser congelar o vídeo
-   - Desktop preservado EXATAMENTE como está
-
-   ✅ FIX MOBILE 3 (2026-03-16) — APLICADO AGORA:
-   - Recovery destrutivo do HERO removido no mobile (sem load())
-   - Não tratar suspend como erro no mobile
-   - Gesto explícito no HERO/overlay pode liberar áudio mesmo durante o gate
-   - Desktop preservado EXATAMENTE como está
-
-   ✅ FIX MOBILE 4 (2026-03-16) — APLICADO AGORA:
-   - No MOBILE, conteúdo fica sempre liberado desde o primeiro carregamento
-   - No MOBILE, todos os botões de compra ficam ocultos, exceto o último
-   - Desktop preservado EXATAMENTE como está
-
-   ✅ FIX MOBILE 5 (2026-03-16) — APLICADO AGORA:
-   - No MOBILE, autoplay do HERO desativado
-   - Desktop preservado EXATAMENTE como está
-
-   ✅ FIX MOBILE 6 (2026-03-16) — APLICADO AGORA:
-   - No MOBILE, efeito de “surgir” (Scroll Reveal) desativado
+   ✅ FIX MOBILE GLOBAL (2026-03-16) — APLICADO AGORA:
+   - Somente no MOBILE, HERO sem autoplay forçado
+   - Somente no MOBILE, HERO e galeria usam preload="metadata" (sem preload agressivo)
+   - Somente no MOBILE, observer NÃO pausa HERO por viewport da galeria
+   - Somente no MOBILE, observer NÃO pausa galeria por viewport do HERO
+   - Somente no MOBILE, pulse por intervalos desativado
+   - Somente no MOBILE, CTA pulse desativado
+   - Somente no MOBILE, scroll otimizado via requestAnimationFrame
    - Desktop preservado EXATAMENTE como está
    ========================================================================== */
 
@@ -212,12 +191,6 @@
     CONTENT_GATE_SESSION_KEY: "presell_gate_unlocked_v1",
     HERO_VIDEO_PIXEL_TRACKING: true,
     HERO_VIDEO_PROGRESS_POINTS: [25, 50, 75],
-
-    // ✅ MOBILE RECOVERY
-    MOBILE_HERO_STALL_TIMEOUT_MS: 2600,
-    MOBILE_HERO_RECOVERY_COOLDOWN_MS: 2400,
-    MOBILE_GATE_UNLOCK_FALLBACK_MS: 70000,
-
     DEBUG: false
   };
 
@@ -270,54 +243,6 @@
   };
 
   /* ===========================
-     ✅ MOBILE CTA VISIBILITY
-     =========================== */
-
-  const MOBILE_CTA_VISIBILITY = {
-    injected: false,
-
-    injectCSS() {
-      if (MOBILE_CTA_VISIBILITY.injected) return;
-      MOBILE_CTA_VISIBILITY.injected = true;
-
-      const css = `
-.mobile-cta-hidden{
-  display: none !important;
-}
-      `.trim();
-
-      const style = document.createElement("style");
-      style.setAttribute("data-presell", "mobile-cta-visibility");
-      style.textContent = css;
-      document.head.appendChild(style);
-    },
-
-    bind() {
-      if (!ENV.isMobile()) return;
-
-      MOBILE_CTA_VISIBILITY.injectCSS();
-
-      const buttons = $$("[data-outbound='1']");
-      if (!buttons.length) return;
-
-      const lastButton = buttons[buttons.length - 1] || null;
-
-      buttons.forEach((btn) => {
-        if (btn !== lastButton) {
-          btn.classList.add("mobile-cta-hidden");
-        } else {
-          btn.classList.remove("mobile-cta-hidden");
-        }
-      });
-
-      const sticky = $(".sticky-cta");
-      if (sticky && (!lastButton || !sticky.contains(lastButton))) {
-        sticky.classList.add("mobile-cta-hidden");
-      }
-    }
-  };
-
-  /* ===========================
      ✅ CONTENT GATE (60s do HERO)
      =========================== */
 
@@ -329,10 +254,6 @@
     heroVideo: null,
     watchedSeconds: 0,
     lastVideoTime: 0,
-
-    mobileFallbackStarted: false,
-    mobileFallbackTimer: null,
-    mobileFallbackStartTs: 0,
 
     injectCSS() {
       if (CONTENT_GATE.injected) return;
@@ -415,12 +336,6 @@ body.gate-on{
     removeGate() {
       document.body.classList.remove("gate-on");
       $$(".gate-hide").forEach((el) => el.classList.remove("gate-hide"));
-
-      if (CONTENT_GATE.mobileFallbackTimer) {
-        clearTimeout(CONTENT_GATE.mobileFallbackTimer);
-        CONTENT_GATE.mobileFallbackTimer = null;
-      }
-
       log("Content gate removed.");
     },
 
@@ -430,33 +345,6 @@ body.gate-on{
       CONTENT_GATE.setSessionUnlocked();
       CONTENT_GATE.removeGate();
       log("Content unlocked:", reason);
-
-      try {
-        if (typeof VIDEO_MANAGER !== "undefined" && VIDEO_MANAGER && typeof VIDEO_MANAGER.onGateUnlocked === "function") {
-          VIDEO_MANAGER.onGateUnlocked(reason);
-        }
-      } catch (_) {}
-    },
-
-    startMobileFallbackTimer() {
-      if (!ENV.isMobile()) return;
-      if (!CONTENT_GATE.enabled) return;
-      if (CONTENT_GATE.unlocked) return;
-      if (!CONTENT_GATE.heroVideo) return;
-
-      CONTENT_GATE.mobileFallbackStarted = true;
-      CONTENT_GATE.mobileFallbackStartTs = nowTs();
-
-      CONTENT_GATE.mobileFallbackTimer = window.setTimeout(() => {
-        if (CONTENT_GATE.unlocked) return;
-        const v = CONTENT_GATE.heroVideo;
-        if (!v) return;
-
-        const current = Number(v.currentTime || 0);
-        if (current > 0.5) {
-          CONTENT_GATE.unlock("mobile_fallback_timeout");
-        }
-      }, CONFIG.MOBILE_GATE_UNLOCK_FALLBACK_MS);
     },
 
     accumulateWatchedSeconds() {
@@ -505,25 +393,17 @@ body.gate-on{
 
       v.addEventListener("play", () => {
         try { CONTENT_GATE.lastVideoTime = Number(v.currentTime || 0); } catch (_) {}
-        CONTENT_GATE.startMobileFallbackTimer();
-      });
-
-      v.addEventListener("playing", () => {
-        try { CONTENT_GATE.lastVideoTime = Number(v.currentTime || 0); } catch (_) {}
-        CONTENT_GATE.startMobileFallbackTimer();
       });
 
       v.addEventListener("timeupdate", () => CONTENT_GATE.accumulateWatchedSeconds());
+
+      v.addEventListener("playing", () => {
+        try { CONTENT_GATE.lastVideoTime = Number(v.currentTime || 0); } catch (_) {}
+      });
     },
 
     bind() {
       if (!CONTENT_GATE.enabled) return;
-
-      if (ENV.isMobile()) {
-        CONTENT_GATE.unlocked = true;
-        log("Content gate bypassed on mobile.");
-        return;
-      }
 
       if (CONTENT_GATE.isSessionUnlocked()) {
         CONTENT_GATE.unlocked = true;
@@ -847,6 +727,7 @@ body.gate-on{
 
   const SCROLL = {
     fired: new Set(),
+    ticking: false,
 
     getScrollPercent() {
       const doc = document.documentElement;
@@ -886,7 +767,22 @@ body.gate-on{
     },
 
     bind() {
-      window.addEventListener("scroll", () => SCROLL.onScroll(true), { passive: true });
+      const useRAFThrottle = ENV.isMobile();
+
+      if (useRAFThrottle) {
+        window.addEventListener("scroll", () => {
+          if (SCROLL.ticking) return;
+
+          SCROLL.ticking = true;
+          requestAnimationFrame(() => {
+            SCROLL.onScroll(true);
+            SCROLL.ticking = false;
+          });
+        }, { passive: true });
+      } else {
+        window.addEventListener("scroll", () => SCROLL.onScroll(true), { passive: true });
+      }
+
       SCROLL.onScroll(false);
     }
   };
@@ -1192,6 +1088,10 @@ body.gate-on{
       if (!HOT_STICKY.el) return;
 
       HOT_STICKY.setVisible(false);
+
+      // ✅ MOBILE: mantém sticky, mas remove o loop de pulse por intervalo
+      if (ENV.isMobile()) return;
+
       HOT_STICKY.pulseTimer = setInterval(() => HOT_STICKY.pulse(), CONFIG.HOT_STICKY_PULSE_EVERY_MS);
     }
   };
@@ -1236,6 +1136,9 @@ body.gate-on{
     firedAtLeastOnce: false,
 
     pulseAll() {
+      // ✅ MOBILE: desativa CTA pulse para aliviar CPU / repaints
+      if (ENV.isMobile()) return;
+
       const now = nowTs();
       if (now - HOT_CTA_PULSE.lastPulseTs < CONFIG.HOT_CTA_PULSE_COOLDOWN_MS) return;
 
@@ -1251,6 +1154,9 @@ body.gate-on{
     },
 
     maybePulse(scrollPct) {
+      // ✅ MOBILE: sem pulse em scroll
+      if (ENV.isMobile()) return;
+
       if (scrollPct >= CONFIG.HOT_CTA_PULSE_AFTER_SCROLL_PCT) {
         if (!HOT_CTA_PULSE.firedAtLeastOnce) {
           HOT_CTA_PULSE.firedAtLeastOnce = true;
@@ -1425,15 +1331,6 @@ body.gate-on{
 
     bind() {
       if (!CONFIG.SCROLL_REVEAL_ENABLED) return;
-
-      // ✅ FIX MOBILE 6:
-      // No mobile, desativa totalmente o efeito de "surgir".
-      // Desktop segue intacto, como um cidadão exemplar que não pediu confusão.
-      if (ENV.isMobile()) {
-        log("Scroll reveal disabled on mobile.");
-        return;
-      }
-
       HOT_SCROLL_REVEAL.injectCSS();
 
       const targets = HOT_SCROLL_REVEAL.prepareTargets();
@@ -1534,18 +1431,11 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
     bound: false,
     audioUnlocked: false,
     audioUnlockHandled: false,
-    pendingMobileGateAudioUnlock: false,
     heroSection: null,
     testimonialsSection: null,
     heroVideo: null,
     allVideos: [],
     testimonialVideos: [],
-
-    mobileHeroRecoveryInterval: null,
-    mobileHeroLastTime: 0,
-    mobileHeroLastProgressTs: 0,
-    mobileHeroLastRecoveryTs: 0,
-    mobileHeroRestoreTimePending: null,
 
     getAllVideos() {
       return $$("video.hero-video");
@@ -1553,42 +1443,6 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
 
     isMobileContext() {
       return ENV.isMobile();
-    },
-
-    isExplicitHeroGesture(source = "") {
-      return source === "overlay" || source === "hero-tap" || source === "hero-click";
-    },
-
-    shouldKeepHeroMutedOnMobileGate() {
-      return VIDEO_MANAGER.isMobileContext() && CONTENT_GATE.enabled && !CONTENT_GATE.unlocked;
-    },
-
-    shouldTryHeroAutoplayWithSoundFirst() {
-      if (!CONFIG.VIDEO_TRY_AUTOPLAY_WITH_SOUND_FIRST) return false;
-      if (VIDEO_MANAGER.isMobileContext()) return false;
-      return true;
-    },
-
-    disableHeroAutoplayOnMobile() {
-      if (!VIDEO_MANAGER.isMobileContext()) return;
-      if (!VIDEO_MANAGER.heroVideo) return;
-
-      const v = VIDEO_MANAGER.heroVideo;
-
-      try { v.autoplay = false; } catch (_) {}
-      try { v.removeAttribute("autoplay"); } catch (_) {}
-
-      const suppressOnce = () => {
-        try {
-          if (!v.paused) v.pause();
-        } catch (_) {}
-      };
-
-      suppressOnce();
-      window.setTimeout(suppressOnce, 0);
-      window.setTimeout(suppressOnce, 120);
-      window.setTimeout(suppressOnce, 350);
-      window.setTimeout(suppressOnce, 700);
     },
 
     safePause(v) {
@@ -1649,10 +1503,6 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
       if (!videoEl) return;
       if (!VIDEO_MANAGER.audioUnlocked) return;
 
-      if (VIDEO_MANAGER.shouldKeepHeroMutedOnMobileGate() && videoEl === VIDEO_MANAGER.heroVideo) {
-        return;
-      }
-
       VIDEO_MANAGER.unmuteVideo(videoEl);
       VIDEO_MANAGER.safePlay(videoEl);
     },
@@ -1662,21 +1512,13 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
         if (!videoEl) return;
         if (!VIDEO_MANAGER.isPlaying(videoEl)) return;
 
-        if (VIDEO_MANAGER.shouldKeepHeroMutedOnMobileGate() && videoEl === VIDEO_MANAGER.heroVideo) {
-          return;
-        }
-
         VIDEO_MANAGER.unmuteVideo(videoEl);
         VIDEO_MANAGER.safePlay(videoEl);
       });
     },
 
-    unlockHeroAudioNow(forceDuringMobileGate = false) {
+    unlockHeroAudioNow() {
       if (!VIDEO_MANAGER.heroVideo) return;
-
-      if (!forceDuringMobileGate && VIDEO_MANAGER.shouldKeepHeroMutedOnMobileGate()) {
-        return;
-      }
 
       VIDEO_MANAGER.unmuteVideo(VIDEO_MANAGER.heroVideo);
 
@@ -1691,25 +1533,9 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
 
       if (nativeEvent && nativeEvent.isTrusted === false) return;
 
-      const isMobileGate = VIDEO_MANAGER.shouldKeepHeroMutedOnMobileGate();
-      const isExplicitHeroGesture = VIDEO_MANAGER.isExplicitHeroGesture(source);
-
-      if (isMobileGate && !isExplicitHeroGesture) {
-        VIDEO_MANAGER.pendingMobileGateAudioUnlock = true;
-        VIDEO_MANAGER.audioUnlockHandled = true;
-        log("Audio unlock deferred by mobile gate:", source);
-        return;
-      }
-
       VIDEO_MANAGER.audioUnlocked = true;
       VIDEO_MANAGER.audioUnlockHandled = true;
-      VIDEO_MANAGER.pendingMobileGateAudioUnlock = false;
       log("Audio unlocked by:", source);
-
-      if (isMobileGate && isExplicitHeroGesture) {
-        VIDEO_MANAGER.unlockHeroAudioNow(true);
-        return;
-      }
 
       VIDEO_MANAGER.unlockHeroAudioNow();
       VIDEO_MANAGER.unlockAudioForPlayingVideos();
@@ -1756,19 +1582,6 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
       window.addEventListener("keydown", wrappedKey, true);
     },
 
-    bindHeroExplicitTapUnlock() {
-      if (!VIDEO_MANAGER.heroVideo) return;
-
-      const onExplicitHeroTap = (event) => {
-        if (!VIDEO_MANAGER.isMobileContext()) return;
-        if (event && event.isTrusted === false) return;
-        VIDEO_MANAGER.markInteractionFromUser("hero-tap", event);
-      };
-
-      VIDEO_MANAGER.heroVideo.addEventListener("click", onExplicitHeroTap, { passive: true });
-      VIDEO_MANAGER.heroVideo.addEventListener("touchend", onExplicitHeroTap, { passive: true });
-    },
-
     bindPauseOthersOnPlay() {
       VIDEO_MANAGER.allVideos.forEach((v) => {
         if (!v) return;
@@ -1782,6 +1595,49 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
         v.addEventListener("playing", () => {
           ENGAGED.markInteraction();
         });
+      });
+    },
+
+    /* ===========================
+       MOBILE LIGHT MODE
+       - HERO sem autoplay forçado
+       - preload leve
+       - galeria leve
+       =========================== */
+    applyMobileVideoOptimizations() {
+      if (!VIDEO_MANAGER.isMobileContext()) return;
+
+      VIDEO_MANAGER.allVideos.forEach((videoEl) => {
+        if (!videoEl) return;
+
+        try {
+          videoEl.preload = "metadata";
+          videoEl.setAttribute("preload", "metadata");
+        } catch (_) {}
+      });
+
+      if (VIDEO_MANAGER.heroVideo) {
+        try { VIDEO_MANAGER.heroVideo.autoplay = false; } catch (_) {}
+        try { VIDEO_MANAGER.heroVideo.removeAttribute("autoplay"); } catch (_) {}
+        try {
+          VIDEO_MANAGER.heroVideo.preload = "metadata";
+          VIDEO_MANAGER.heroVideo.setAttribute("preload", "metadata");
+        } catch (_) {}
+
+        // Mantém o HERO em estado previsível no mobile:
+        // nada de tentar sair correndo sozinho igual estagiário no primeiro dia.
+        try {
+          if (!VIDEO_MANAGER.heroVideo.paused) VIDEO_MANAGER.heroVideo.pause();
+        } catch (_) {}
+      }
+
+      VIDEO_MANAGER.testimonialVideos.forEach((videoEl) => {
+        if (!videoEl) return;
+
+        try {
+          videoEl.preload = "metadata";
+          videoEl.setAttribute("preload", "metadata");
+        } catch (_) {}
       });
     },
 
@@ -1877,78 +1733,6 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
       });
     },
 
-    attemptMobileHeroRecovery(reason = "stall") {
-      const v = VIDEO_MANAGER.heroVideo;
-      if (!VIDEO_MANAGER.isMobileContext()) return;
-      if (!v) return;
-      if (CONTENT_GATE.unlocked) return;
-      if (document.visibilityState !== "visible") return;
-      if (v.ended) return;
-
-      const now = nowTs();
-      if (now - VIDEO_MANAGER.mobileHeroLastRecoveryTs < CONFIG.MOBILE_HERO_RECOVERY_COOLDOWN_MS) return;
-      VIDEO_MANAGER.mobileHeroLastRecoveryTs = now;
-
-      log("Mobile hero recovery:", reason, Number(v.currentTime || 0));
-
-      if (VIDEO_MANAGER.shouldKeepHeroMutedOnMobileGate() || !VIDEO_MANAGER.audioUnlocked) {
-        VIDEO_MANAGER.forceHeroMutedForAutoplay();
-      } else {
-        VIDEO_MANAGER.unmuteVideo(v);
-      }
-
-      VIDEO_MANAGER.safePlay(v);
-    },
-
-    bindMobileHeroRecovery() {
-      if (!VIDEO_MANAGER.isMobileContext()) return;
-      if (!VIDEO_MANAGER.heroVideo) return;
-      if (VIDEO_MANAGER.mobileHeroRecoveryInterval) return;
-
-      const v = VIDEO_MANAGER.heroVideo;
-
-      VIDEO_MANAGER.mobileHeroLastTime = Number(v.currentTime || 0);
-      VIDEO_MANAGER.mobileHeroLastProgressTs = nowTs();
-
-      const markProgress = () => {
-        VIDEO_MANAGER.mobileHeroLastTime = Number(v.currentTime || 0);
-        VIDEO_MANAGER.mobileHeroLastProgressTs = nowTs();
-      };
-
-      v.addEventListener("loadedmetadata", markProgress);
-      v.addEventListener("loadeddata", markProgress);
-      v.addEventListener("canplay", markProgress);
-      v.addEventListener("play", markProgress);
-      v.addEventListener("playing", markProgress);
-      v.addEventListener("timeupdate", markProgress);
-
-      v.addEventListener("waiting", () => VIDEO_MANAGER.attemptMobileHeroRecovery("waiting"));
-      v.addEventListener("stalled", () => VIDEO_MANAGER.attemptMobileHeroRecovery("stalled"));
-
-      VIDEO_MANAGER.mobileHeroRecoveryInterval = window.setInterval(() => {
-        const hero = VIDEO_MANAGER.heroVideo;
-        if (!hero) return;
-        if (CONTENT_GATE.unlocked) return;
-        if (document.visibilityState !== "visible") return;
-        if (hero.ended) return;
-
-        const current = Number(hero.currentTime || 0);
-
-        if (current > VIDEO_MANAGER.mobileHeroLastTime + 0.01) {
-          VIDEO_MANAGER.mobileHeroLastTime = current;
-          VIDEO_MANAGER.mobileHeroLastProgressTs = nowTs();
-          return;
-        }
-
-        const stalledFor = nowTs() - VIDEO_MANAGER.mobileHeroLastProgressTs;
-        const isFrozen = !hero.paused && stalledFor >= CONFIG.MOBILE_HERO_STALL_TIMEOUT_MS;
-
-        if (isFrozen) {
-          VIDEO_MANAGER.attemptMobileHeroRecovery("progress_freeze");
-        }
-      }, 1000);
-    },
-
     scheduleHeroAutoplayAttempts() {
       if (!CONFIG.VIDEO_AUTOPLAY_ENABLED) return;
       if (!VIDEO_MANAGER.heroVideo) return;
@@ -1958,7 +1742,7 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
       const tryStartHero = () => {
         if (!v || VIDEO_MANAGER.isPlaying(v)) return;
 
-        const tryWithSound = VIDEO_MANAGER.shouldTryHeroAutoplayWithSoundFirst()
+        const tryWithSound = CONFIG.VIDEO_TRY_AUTOPLAY_WITH_SOUND_FIRST
           ? VIDEO_MANAGER.tryHeroAutoplayWithSoundFirst()
           : Promise.resolve(false);
 
@@ -2000,8 +1784,9 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
       if (!CONFIG.VIDEO_AUTOPLAY_ENABLED) return;
       if (!VIDEO_MANAGER.heroVideo) return;
 
+      // ✅ MOBILE: sem autoplay forçado, sem preload agressivo, sem cascata de tentativas
       if (VIDEO_MANAGER.isMobileContext()) {
-        VIDEO_MANAGER.disableHeroAutoplayOnMobile();
+        VIDEO_MANAGER.applyMobileVideoOptimizations();
         return;
       }
 
@@ -2028,6 +1813,9 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
 
       if (!VIDEO_MANAGER.heroSection || !VIDEO_MANAGER.testimonialsSection) return;
 
+      // ✅ MOBILE: desativa auto-pause por viewport entre HERO e galeria
+      if (VIDEO_MANAGER.isMobileContext()) return;
+
       const obs = new IntersectionObserver(
         (entries) => {
           entries.forEach((entry) => {
@@ -2051,20 +1839,6 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
       obs.observe(VIDEO_MANAGER.testimonialsSection);
     },
 
-    onGateUnlocked() {
-      if (!VIDEO_MANAGER.isMobileContext()) return;
-
-      if (VIDEO_MANAGER.pendingMobileGateAudioUnlock && !VIDEO_MANAGER.audioUnlocked) {
-        VIDEO_MANAGER.audioUnlocked = true;
-        VIDEO_MANAGER.pendingMobileGateAudioUnlock = false;
-      }
-
-      if (VIDEO_MANAGER.audioUnlocked) {
-        VIDEO_MANAGER.unlockHeroAudioNow();
-        VIDEO_MANAGER.unlockAudioForPlayingVideos();
-      }
-    },
-
     bind() {
       if (VIDEO_MANAGER.bound) return;
 
@@ -2074,11 +1848,10 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
 
       if (!VIDEO_MANAGER.allVideos.length) return;
 
+      VIDEO_MANAGER.applyMobileVideoOptimizations();
       VIDEO_MANAGER.bindGlobalUnlock();
-      VIDEO_MANAGER.bindHeroExplicitTapUnlock();
       VIDEO_MANAGER.bindPauseOthersOnPlay();
       VIDEO_MANAGER.bindSectionFocusAutoPause();
-      VIDEO_MANAGER.bindMobileHeroRecovery();
       VIDEO_MANAGER.tryHeroAutoplay();
 
       VIDEO_MANAGER.bound = true;
@@ -2449,7 +2222,6 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
       VIDEO_UI.bind();
       VIDEO_GALLERY.bind();
       HERO_VIDEO_PIXEL.bind();
-      MOBILE_CTA_VISIBILITY.bind();
 
       INIT.fireInitialPixels();
       OUTBOUND.bind();
