@@ -117,6 +117,10 @@
    ✅ FIX MOBILE 5 (2026-03-16) — APLICADO AGORA:
    - No MOBILE, autoplay do HERO desativado
    - Desktop preservado EXATAMENTE como está
+
+   ✅ FIX MOBILE 6 (2026-03-16) — APLICADO AGORA:
+   - No MOBILE, efeito de “surgir” (Scroll Reveal) desativado
+   - Desktop preservado EXATAMENTE como está
    ========================================================================== */
 
 (() => {
@@ -438,7 +442,6 @@ body.gate-on{
       if (!ENV.isMobile()) return;
       if (!CONTENT_GATE.enabled) return;
       if (CONTENT_GATE.unlocked) return;
-      if (CONTENT_GATE.mobileFallbackStarted) return;
       if (!CONTENT_GATE.heroVideo) return;
 
       CONTENT_GATE.mobileFallbackStarted = true;
@@ -1422,6 +1425,15 @@ body.gate-on{
 
     bind() {
       if (!CONFIG.SCROLL_REVEAL_ENABLED) return;
+
+      // ✅ FIX MOBILE 6:
+      // No mobile, desativa totalmente o efeito de "surgir".
+      // Desktop segue intacto, como um cidadão exemplar que não pediu confusão.
+      if (ENV.isMobile()) {
+        log("Scroll reveal disabled on mobile.");
+        return;
+      }
+
       HOT_SCROLL_REVEAL.injectCSS();
 
       const targets = HOT_SCROLL_REVEAL.prepareTargets();
