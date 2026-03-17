@@ -113,6 +113,10 @@
    - No MOBILE, conteúdo fica sempre liberado desde o primeiro carregamento
    - No MOBILE, todos os botões de compra ficam ocultos, exceto o último
    - Desktop preservado EXATAMENTE como está
+
+   ✅ FIX MOBILE 5 (2026-03-16) — APLICADO AGORA:
+   - No MOBILE, autoplay do HERO desativado
+   - Desktop preservado EXATAMENTE como está
    ========================================================================== */
 
 (() => {
@@ -1553,6 +1557,28 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
       return true;
     },
 
+    disableHeroAutoplayOnMobile() {
+      if (!VIDEO_MANAGER.isMobileContext()) return;
+      if (!VIDEO_MANAGER.heroVideo) return;
+
+      const v = VIDEO_MANAGER.heroVideo;
+
+      try { v.autoplay = false; } catch (_) {}
+      try { v.removeAttribute("autoplay"); } catch (_) {}
+
+      const suppressOnce = () => {
+        try {
+          if (!v.paused) v.pause();
+        } catch (_) {}
+      };
+
+      suppressOnce();
+      window.setTimeout(suppressOnce, 0);
+      window.setTimeout(suppressOnce, 120);
+      window.setTimeout(suppressOnce, 350);
+      window.setTimeout(suppressOnce, 700);
+    },
+
     safePause(v) {
       if (!v) return;
       try { v.pause(); } catch (_) {}
@@ -1961,6 +1987,12 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
     tryHeroAutoplay() {
       if (!CONFIG.VIDEO_AUTOPLAY_ENABLED) return;
       if (!VIDEO_MANAGER.heroVideo) return;
+
+      if (VIDEO_MANAGER.isMobileContext()) {
+        VIDEO_MANAGER.disableHeroAutoplayOnMobile();
+        return;
+      }
+
       VIDEO_MANAGER.scheduleHeroAutoplayAttempts();
     },
 
