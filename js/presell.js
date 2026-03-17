@@ -96,6 +96,12 @@
    - Somente no MOBILE, enquanto o CONTENT GATE estiver ativo, o HERO permanece mutado
    - Somente no MOBILE, a primeira interação não força desmute do HERO durante o gate
    - Desktop preservado EXATAMENTE com o comportamento anterior
+
+   ✅ FIX MOBILE 2 (2026-03-16) — APLICADO AGORA:
+   - Somente no MOBILE, gesto explícito no HERO/overlay volta a liberar áudio durante o gate
+   - Watchdog de recuperação do HERO para stall/buffer freeze
+   - Fallback seguro do gate no MOBILE para evitar travamento perpétuo se o browser congelar o vídeo
+   - Desktop preservado EXATAMENTE como está
    ========================================================================== */
 
 (() => {
@@ -187,6 +193,12 @@
     CONTENT_GATE_SESSION_KEY: "presell_gate_unlocked_v1",
     HERO_VIDEO_PIXEL_TRACKING: true,
     HERO_VIDEO_PROGRESS_POINTS: [25, 50, 75],
+
+    // ✅ MOBILE RECOVERY
+    MOBILE_HERO_STALL_TIMEOUT_MS: 2600,
+    MOBILE_HERO_RECOVERY_COOLDOWN_MS: 2400,
+    MOBILE_GATE_UNLOCK_FALLBACK_MS: 70000,
+
     DEBUG: false
   };
 
@@ -250,6 +262,10 @@
     heroVideo: null,
     watchedSeconds: 0,
     lastVideoTime: 0,
+
+    mobileFallbackStarted: false,
+    mobileFallbackTimer: null,
+    mobileFallbackStartTs: 0,
 
     injectCSS() {
       if (CONTENT_GATE.injected) return;
@@ -332,6 +348,12 @@ body.gate-on{
     removeGate() {
       document.body.classList.remove("gate-on");
       $$(".gate-hide").forEach((el) => el.classList.remove("gate-hide"));
+
+      if (CONTENT_GATE.mobileFallbackTimer) {
+        clearTimeout(CONTENT_GATE.mobileFallbackTimer);
+        CONTENT_GATE.mobileFallbackTimer = null;
+      }
+
       log("Content gate removed.");
     },
 
@@ -341,6 +363,34 @@ body.gate-on{
       CONTENT_GATE.setSessionUnlocked();
       CONTENT_GATE.removeGate();
       log("Content unlocked:", reason);
+
+      try {
+        if (typeof VIDEO_MANAGER !== "undefined" && VIDEO_MANAGER && typeof VIDEO_MANAGER.onGateUnlocked === "function") {
+          VIDEO_MANAGER.onGateUnlocked(reason);
+        }
+      } catch (_) {}
+    },
+
+    startMobileFallbackTimer() {
+      if (!ENV.isMobile()) return;
+      if (!CONTENT_GATE.enabled) return;
+      if (CONTENT_GATE.unlocked) return;
+      if (CONTENT_GATE.mobileFallbackStarted) return;
+      if (!CONTENT_GATE.heroVideo) return;
+
+      CONTENT_GATE.mobileFallbackStarted = true;
+      CONTENT_GATE.mobileFallbackStartTs = nowTs();
+
+      CONTENT_GATE.mobileFallbackTimer = window.setTimeout(() => {
+        if (CONTENT_GATE.unlocked) return;
+        const v = CONTENT_GATE.heroVideo;
+        if (!v) return;
+
+        const current = Number(v.currentTime || 0);
+        if (current > 0.5) {
+          CONTENT_GATE.unlock("mobile_fallback_timeout");
+        }
+      }, CONFIG.MOBILE_GATE_UNLOCK_FALLBACK_MS);
     },
 
     accumulateWatchedSeconds() {
@@ -389,13 +439,15 @@ body.gate-on{
 
       v.addEventListener("play", () => {
         try { CONTENT_GATE.lastVideoTime = Number(v.currentTime || 0); } catch (_) {}
+        CONTENT_GATE.startMobileFallbackTimer();
       });
-
-      v.addEventListener("timeupdate", () => CONTENT_GATE.accumulateWatchedSeconds());
 
       v.addEventListener("playing", () => {
         try { CONTENT_GATE.lastVideoTime = Number(v.currentTime || 0); } catch (_) {}
+        CONTENT_GATE.startMobileFallbackTimer();
       });
+
+      v.addEventListener("timeupdate", () => CONTENT_GATE.accumulateWatchedSeconds());
     },
 
     bind() {
@@ -1408,12 +1460,22 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
     allVideos: [],
     testimonialVideos: [],
 
+    mobileHeroRecoveryInterval: null,
+    mobileHeroLastTime: 0,
+    mobileHeroLastProgressTs: 0,
+    mobileHeroLastRecoveryTs: 0,
+    mobileHeroRestoreTimePending: null,
+
     getAllVideos() {
       return $$("video.hero-video");
     },
 
     isMobileContext() {
       return ENV.isMobile();
+    },
+
+    isExplicitHeroGesture(source = "") {
+      return source === "overlay" || source === "hero-tap" || source === "hero-click";
     },
 
     shouldKeepHeroMutedOnMobileGate() {
@@ -1526,7 +1588,10 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
 
       if (nativeEvent && nativeEvent.isTrusted === false) return;
 
-      if (VIDEO_MANAGER.shouldKeepHeroMutedOnMobileGate()) {
+      const isMobileGate = VIDEO_MANAGER.shouldKeepHeroMutedOnMobileGate();
+      const isExplicitHeroGesture = VIDEO_MANAGER.isExplicitHeroGesture(source);
+
+      if (isMobileGate && !isExplicitHeroGesture) {
         VIDEO_MANAGER.pendingMobileGateAudioUnlock = true;
         VIDEO_MANAGER.audioUnlockHandled = true;
         log("Audio unlock deferred by mobile gate:", source);
@@ -1581,6 +1646,19 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
       window.addEventListener("touchstart", wrappedTouch, true);
       window.addEventListener("click", wrappedClick, true);
       window.addEventListener("keydown", wrappedKey, true);
+    },
+
+    bindHeroExplicitTapUnlock() {
+      if (!VIDEO_MANAGER.heroVideo) return;
+
+      const onExplicitHeroTap = (event) => {
+        if (!VIDEO_MANAGER.isMobileContext()) return;
+        if (event && event.isTrusted === false) return;
+        VIDEO_MANAGER.markInteractionFromUser("hero-tap", event);
+      };
+
+      VIDEO_MANAGER.heroVideo.addEventListener("click", onExplicitHeroTap, { passive: true });
+      VIDEO_MANAGER.heroVideo.addEventListener("touchend", onExplicitHeroTap, { passive: true });
     },
 
     bindPauseOthersOnPlay() {
@@ -1691,6 +1769,113 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
       });
     },
 
+    attemptMobileHeroRecovery(reason = "stall") {
+      const v = VIDEO_MANAGER.heroVideo;
+      if (!VIDEO_MANAGER.isMobileContext()) return;
+      if (!v) return;
+      if (CONTENT_GATE.unlocked) return;
+      if (document.visibilityState !== "visible") return;
+      if (v.ended) return;
+
+      const now = nowTs();
+      if (now - VIDEO_MANAGER.mobileHeroLastRecoveryTs < CONFIG.MOBILE_HERO_RECOVERY_COOLDOWN_MS) return;
+      VIDEO_MANAGER.mobileHeroLastRecoveryTs = now;
+
+      const restoreTime = Number(v.currentTime || 0);
+      const shouldKeepMuted = VIDEO_MANAGER.shouldKeepHeroMutedOnMobileGate() || !VIDEO_MANAGER.audioUnlocked;
+
+      log("Mobile hero recovery:", reason, restoreTime);
+
+      if (shouldKeepMuted) {
+        VIDEO_MANAGER.forceHeroMutedForAutoplay();
+      } else {
+        VIDEO_MANAGER.unmuteVideo(v);
+      }
+
+      VIDEO_MANAGER.safePlay(v).then((ok) => {
+        if (ok) return;
+
+        try {
+          VIDEO_MANAGER.mobileHeroRestoreTimePending = restoreTime;
+
+          const restoreAndPlay = () => {
+            try {
+              const t = Number(VIDEO_MANAGER.mobileHeroRestoreTimePending || 0);
+              if (t > 0 && Number.isFinite(t)) {
+                v.currentTime = t;
+              }
+            } catch (_) {}
+
+            if (shouldKeepMuted) {
+              VIDEO_MANAGER.forceHeroMutedForAutoplay();
+            } else {
+              VIDEO_MANAGER.unmuteVideo(v);
+            }
+
+            VIDEO_MANAGER.safePlay(v);
+
+            try { v.removeEventListener("loadedmetadata", restoreAndPlay); } catch (_) {}
+            try { v.removeEventListener("canplay", restoreAndPlay); } catch (_) {}
+            VIDEO_MANAGER.mobileHeroRestoreTimePending = null;
+          };
+
+          v.addEventListener("loadedmetadata", restoreAndPlay);
+          v.addEventListener("canplay", restoreAndPlay);
+          v.load();
+        } catch (_) {}
+      });
+    },
+
+    bindMobileHeroRecovery() {
+      if (!VIDEO_MANAGER.isMobileContext()) return;
+      if (!VIDEO_MANAGER.heroVideo) return;
+      if (VIDEO_MANAGER.mobileHeroRecoveryInterval) return;
+
+      const v = VIDEO_MANAGER.heroVideo;
+
+      VIDEO_MANAGER.mobileHeroLastTime = Number(v.currentTime || 0);
+      VIDEO_MANAGER.mobileHeroLastProgressTs = nowTs();
+
+      const markProgress = () => {
+        VIDEO_MANAGER.mobileHeroLastTime = Number(v.currentTime || 0);
+        VIDEO_MANAGER.mobileHeroLastProgressTs = nowTs();
+      };
+
+      v.addEventListener("loadedmetadata", markProgress);
+      v.addEventListener("loadeddata", markProgress);
+      v.addEventListener("canplay", markProgress);
+      v.addEventListener("play", markProgress);
+      v.addEventListener("playing", markProgress);
+      v.addEventListener("timeupdate", markProgress);
+
+      v.addEventListener("waiting", () => VIDEO_MANAGER.attemptMobileHeroRecovery("waiting"));
+      v.addEventListener("stalled", () => VIDEO_MANAGER.attemptMobileHeroRecovery("stalled"));
+      v.addEventListener("suspend", () => VIDEO_MANAGER.attemptMobileHeroRecovery("suspend"));
+
+      VIDEO_MANAGER.mobileHeroRecoveryInterval = window.setInterval(() => {
+        const hero = VIDEO_MANAGER.heroVideo;
+        if (!hero) return;
+        if (CONTENT_GATE.unlocked) return;
+        if (document.visibilityState !== "visible") return;
+        if (hero.ended) return;
+
+        const current = Number(hero.currentTime || 0);
+
+        if (current > VIDEO_MANAGER.mobileHeroLastTime + 0.01) {
+          VIDEO_MANAGER.mobileHeroLastTime = current;
+          VIDEO_MANAGER.mobileHeroLastProgressTs = nowTs();
+          return;
+        }
+
+        const stalledFor = nowTs() - VIDEO_MANAGER.mobileHeroLastProgressTs;
+        const isFrozen = !hero.paused && stalledFor >= CONFIG.MOBILE_HERO_STALL_TIMEOUT_MS;
+
+        if (isFrozen) {
+          VIDEO_MANAGER.attemptMobileHeroRecovery("progress_freeze");
+        }
+      }, 1000);
+    },
+
     scheduleHeroAutoplayAttempts() {
       if (!CONFIG.VIDEO_AUTOPLAY_ENABLED) return;
       if (!VIDEO_MANAGER.heroVideo) return;
@@ -1787,6 +1972,20 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
       obs.observe(VIDEO_MANAGER.testimonialsSection);
     },
 
+    onGateUnlocked() {
+      if (!VIDEO_MANAGER.isMobileContext()) return;
+
+      if (VIDEO_MANAGER.pendingMobileGateAudioUnlock && !VIDEO_MANAGER.audioUnlocked) {
+        VIDEO_MANAGER.audioUnlocked = true;
+        VIDEO_MANAGER.pendingMobileGateAudioUnlock = false;
+      }
+
+      if (VIDEO_MANAGER.audioUnlocked) {
+        VIDEO_MANAGER.unlockHeroAudioNow();
+        VIDEO_MANAGER.unlockAudioForPlayingVideos();
+      }
+    },
+
     bind() {
       if (VIDEO_MANAGER.bound) return;
 
@@ -1797,8 +1996,10 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
       if (!VIDEO_MANAGER.allVideos.length) return;
 
       VIDEO_MANAGER.bindGlobalUnlock();
+      VIDEO_MANAGER.bindHeroExplicitTapUnlock();
       VIDEO_MANAGER.bindPauseOthersOnPlay();
       VIDEO_MANAGER.bindSectionFocusAutoPause();
+      VIDEO_MANAGER.bindMobileHeroRecovery();
       VIDEO_MANAGER.tryHeroAutoplay();
 
       VIDEO_MANAGER.bound = true;
