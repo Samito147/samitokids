@@ -51,19 +51,6 @@ style="position:fixed;inset:0;width:100%;height:100%;z-index:-2;pointer-events:n
   </div>
 </div>
 
-<!-- STICKY CTA -->
-<div class="sticky-cta">
-  <div class="sticky-cta__inner">
-    <div class="sticky-cta__copy">
-      <strong>Ver a apresentação oficial</strong>
-      <span class="sticky-cta__sub">Clique e siga direto.</span>
-    </div>
-
-    <!-- ✅ FIX: marcado como outbound para o gate bloquear antes da hora -->
-    <button class="primary-btn primary-btn--sticky" data-cta="sticky" data-outbound="1">✅ VER</button>
-  </div>
-</div>
-
 <!-- MAIN -->
 <main class="container">
 
@@ -120,7 +107,7 @@ style="position:fixed;inset:0;width:100%;height:100%;z-index:-2;pointer-events:n
           <div class="video-gallery__slide is-active" data-video-slide data-index="0" aria-hidden="false">
             <div class="video-container">
               <video class="hero-video" controls preload="metadata" playsinline>
-                <source src="https://9r0fcpglbkentrcp.public.blob.vercel-storage.com/video2.mp4" type="video/mp4">
+                <source src="https://9r0fcpglbkentrcp.public.blob.vercel-storage.com/opiniao1.mp4" type="video/mp4">
                 Seu navegador não suporta vídeo HTML5.
               </video>
             </div>
@@ -129,7 +116,7 @@ style="position:fixed;inset:0;width:100%;height:100%;z-index:-2;pointer-events:n
           <div class="video-gallery__slide" data-video-slide data-index="1" aria-hidden="true">
             <div class="video-container">
               <video class="hero-video" controls preload="metadata" playsinline>
-                <source src="https://9r0fcpglbkentrcp.public.blob.vercel-storage.com/video3.mp4" type="video/mp4">
+                <source src="https://9r0fcpglbkentrcp.public.blob.vercel-storage.com/opiniao2.mp4" type="video/mp4">
                 Seu navegador não suporta vídeo HTML5.
               </video>
             </div>
@@ -138,7 +125,7 @@ style="position:fixed;inset:0;width:100%;height:100%;z-index:-2;pointer-events:n
           <div class="video-gallery__slide" data-video-slide data-index="2" aria-hidden="true">
             <div class="video-container">
               <video class="hero-video" controls preload="metadata" playsinline>
-                <source src="https://9r0fcpglbkentrcp.public.blob.vercel-storage.com/video4.mp4" type="video/mp4">
+                <source src="https://9r0fcpglbkentrcp.public.blob.vercel-storage.com/opiniao3.mp4" type="video/mp4">
                 Seu navegador não suporta vídeo HTML5.
               </video>
             </div>
@@ -147,7 +134,7 @@ style="position:fixed;inset:0;width:100%;height:100%;z-index:-2;pointer-events:n
           <div class="video-gallery__slide" data-video-slide data-index="3" aria-hidden="true">
             <div class="video-container">
               <video class="hero-video" controls preload="metadata" playsinline>
-                <source src="https://9r0fcpglbkentrcp.public.blob.vercel-storage.com/video5.mp4" type="video/mp4">
+                <source src="https://9r0fcpglbkentrcp.public.blob.vercel-storage.com/opiniao4.mp4" type="video/mp4">
                 Seu navegador não suporta vídeo HTML5.
               </video>
             </div>
@@ -156,7 +143,7 @@ style="position:fixed;inset:0;width:100%;height:100%;z-index:-2;pointer-events:n
           <div class="video-gallery__slide" data-video-slide data-index="4" aria-hidden="true">
             <div class="video-container">
               <video class="hero-video" controls preload="metadata" playsinline>
-                <source src="https://9r0fcpglbkentrcp.public.blob.vercel-storage.com/video6.mp4" type="video/mp4">
+                <source src="https://9r0fcpglbkentrcp.public.blob.vercel-storage.com/opiniao5.mp4" type="video/mp4">
                 Seu navegador não suporta vídeo HTML5.
               </video>
             </div>
@@ -266,8 +253,111 @@ style="position:fixed;inset:0;width:100%;height:100%;z-index:-2;pointer-events:n
 
     </div>
   </section>
+<!-- 🧱 FOOTER PROFISSIONAL -->
+<footer class="site-footer" aria-label="Informações de rodapé">
 
+  <div class="site-footer__container">
+
+    <!-- 🔒 Segurança -->
+    <div class="site-footer__block">
+      <span class="site-footer__title">🔒 Ambiente Seguro</span>
+      <small class="site-footer__text">Seus dados protegidos com criptografia SSL</small>
+    </div>
+
+    <!-- ⚡ Acesso -->
+    <div class="site-footer__block">
+      <span class="site-footer__title">⚡ Acesso Imediato</span>
+      <small class="site-footer__text">Liberação automática após confirmação</small>
+    </div>
+
+    <!-- © -->
+    <div class="site-footer__copy">
+      © <span id="js-year"></span> Todos os direitos reservados
+    </div>
+
+  </div>
+
+</footer>
+
+<!-- 🎨 CSS DO FOOTER -->
+<style>
+/* =========================
+   FOOTER PREMIUM LIGHT (ajustado para fundo claro)
+   ========================= */
+.site-footer {
+  margin-top: 40px;
+  padding: 28px 16px;
+  text-align: center;
+  border-top: 1px solid rgba(0,0,0,0.08);
+}
+
+/* container centralizado */
+.site-footer__container {
+  max-width: 520px;
+  margin: 0 auto;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+
+/* blocos */
+.site-footer__block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  padding: 12px 16px;
+  border-radius: 10px;
+
+  border: 1px solid rgba(0,0,0,0.08);
+
+  width: 100%;
+  max-width: 360px;
+
+  transition: all 0.25s ease;
+}
+
+/* hover suave (efeito premium) */
+.site-footer__block:hover {
+  transform: translateY(-2px);
+  border-color: rgba(0,0,0,0.18);
+}
+
+/* título */
+.site-footer__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+/* texto menor */
+.site-footer__text {
+  font-size: 12px;
+  color: rgba(0,0,0,0.65);
+}
+
+/* copyright */
+.site-footer__copy {
+  font-size: 12px;
+  color: rgba(0,0,0,0.45);
+  margin-top: 6px;
+}
+
+/* responsivo */
+@media (min-width: 480px) {
+  .site-footer__container {
+    gap: 20px;
+  }
+
+  .site-footer__block {
+    max-width: 420px;
+  }
+}
+</style>
 </main>
+<!-- 🧱 FOOTER PROFISSIONAL -->
 
 <!-- JS -->
 <script src="js/presell.js" defer></script>
