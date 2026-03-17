@@ -99,6 +99,12 @@
    - Estilo translúcido com ícone de fundo
    - Responsivo para desktop/mobile
    - Sem interferir na lógica existente
+
+   ✅ NOVO (2026-03-17) — SETA DE NOVO CONTEÚDO:
+   - Após liberar o conteúdo do gate, exibe seta elegante para baixo
+   - Animação suave e discreta
+   - Some ao rolar / clicar / após alguns segundos
+   - Sem alterar a lógica existente
    ========================================================================== */
 
 (() => {
@@ -202,6 +208,12 @@
     TOASTS_CHANCE_PER_CYCLE: 0.78,
     TOASTS_RESPECT_GATE: false,
 
+    // ✅ SETA PÓS-GATE
+    DOWN_HINT_ENABLED: true,
+    DOWN_HINT_VISIBLE_MS: 8500,
+    DOWN_HINT_HIDE_AFTER_SCROLL_PX: 36,
+    DOWN_HINT_SCROLL_ON_CLICK_PX: 220,
+
     DEBUG: false
   };
 
@@ -250,6 +262,302 @@
   const pickRandom = (arr = []) => {
     if (!Array.isArray(arr) || !arr.length) return null;
     return arr[Math.floor(Math.random() * arr.length)];
+  };
+
+  /* ===========================
+     ✅ SETA DE NOVO CONTEÚDO
+     =========================== */
+
+  const DOWN_HINT = {
+    injected: false,
+    el: null,
+    hideTimer: null,
+    baselineScrollY: 0,
+    visible: false,
+    scrollHandler: null,
+    clickHandler: null,
+
+    injectCSS() {
+      if (DOWN_HINT.injected) return;
+      DOWN_HINT.injected = true;
+
+      const css = `
+.down-hint{
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%) translateY(14px) scale(.98);
+  z-index: 9997;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 360ms ease,
+    transform 360ms ease,
+    filter 360ms ease;
+  filter: blur(2px);
+}
+
+.down-hint.is-visible{
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%) translateY(0) scale(1);
+  filter: blur(0);
+}
+
+.down-hint.is-hiding{
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(8px) scale(.985);
+}
+
+.down-hint__button{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-width: 64px;
+  min-height: 64px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255,255,255,.22);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, .34);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow:
+    0 18px 42px rgba(0,0,0,.22),
+    inset 0 1px 0 rgba(255,255,255,.06);
+  cursor: pointer;
+  color: rgba(255,255,255,.96);
+  position: relative;
+  overflow: hidden;
+}
+
+.down-hint__button::before{
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,0));
+  pointer-events: none;
+}
+
+.down-hint__button:active{
+  transform: scale(.98);
+}
+
+.down-hint__icon-wrap{
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: rgba(255,255,255,.07);
+  border: 1px solid rgba(255,255,255,.1);
+  position: relative;
+  z-index: 1;
+}
+
+.down-hint__icon{
+  width: 22px;
+  height: 22px;
+  display: block;
+  animation: downHintFloat 1.65s ease-in-out infinite;
+}
+
+.down-hint__pulse{
+  position: absolute;
+  inset: 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.12);
+  animation: downHintPulse 2.1s ease-out infinite;
+  pointer-events: none;
+}
+
+@keyframes downHintFloat{
+  0%, 100%{
+    transform: translateY(0);
+    opacity: .92;
+  }
+  50%{
+    transform: translateY(4px);
+    opacity: 1;
+  }
+}
+
+@keyframes downHintPulse{
+  0%{
+    opacity: 0;
+    transform: scale(.88);
+  }
+  35%{
+    opacity: .34;
+  }
+  100%{
+    opacity: 0;
+    transform: scale(1.14);
+  }
+}
+
+@media (max-width: 640px){
+  .down-hint{
+    bottom: 14px;
+  }
+
+  .down-hint__button{
+    min-width: 58px;
+    min-height: 58px;
+    padding: 10px 12px;
+  }
+
+  .down-hint__icon-wrap{
+    width: 32px;
+    height: 32px;
+  }
+
+  .down-hint__icon{
+    width: 20px;
+    height: 20px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce){
+  .down-hint,
+  .down-hint__icon,
+  .down-hint__pulse{
+    transition: none !important;
+    animation: none !important;
+  }
+}
+      `.trim();
+
+      const style = document.createElement("style");
+      style.setAttribute("data-presell", "down-hint");
+      style.textContent = css;
+      document.head.appendChild(style);
+    },
+
+    ensureEl() {
+      if (DOWN_HINT.el) return DOWN_HINT.el;
+
+      DOWN_HINT.injectCSS();
+
+      const root = document.createElement("div");
+      root.className = "down-hint";
+      root.setAttribute("aria-hidden", "true");
+
+      root.innerHTML = `
+<button type="button" class="down-hint__button" aria-label="Ver mais conteúdo abaixo">
+  <span class="down-hint__pulse" aria-hidden="true"></span>
+  <span class="down-hint__icon-wrap" aria-hidden="true">
+    <svg class="down-hint__icon" viewBox="0 0 24 24" fill="none" focusable="false" aria-hidden="true">
+      <path d="M12 5.5v11" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+      <path d="M6.5 12.5 12 18l5.5-5.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </span>
+</button>
+      `.trim();
+
+      document.body.appendChild(root);
+      DOWN_HINT.el = root;
+      return root;
+    },
+
+    clearTimers() {
+      if (DOWN_HINT.hideTimer) {
+        clearTimeout(DOWN_HINT.hideTimer);
+        DOWN_HINT.hideTimer = null;
+      }
+    },
+
+    unbindAutoHide() {
+      if (DOWN_HINT.scrollHandler) {
+        window.removeEventListener("scroll", DOWN_HINT.scrollHandler, { passive: true });
+        DOWN_HINT.scrollHandler = null;
+      }
+
+      if (DOWN_HINT.clickHandler && DOWN_HINT.el) {
+        const btn = $(".down-hint__button", DOWN_HINT.el);
+        if (btn) btn.removeEventListener("click", DOWN_HINT.clickHandler);
+        DOWN_HINT.clickHandler = null;
+      }
+    },
+
+    hide() {
+      if (!DOWN_HINT.el || !DOWN_HINT.visible) return;
+
+      DOWN_HINT.visible = false;
+      DOWN_HINT.clearTimers();
+      DOWN_HINT.unbindAutoHide();
+
+      DOWN_HINT.el.classList.add("is-hiding");
+      DOWN_HINT.el.classList.remove("is-visible");
+      DOWN_HINT.el.setAttribute("aria-hidden", "true");
+
+      window.setTimeout(() => {
+        if (!DOWN_HINT.el) return;
+        DOWN_HINT.el.classList.remove("is-hiding");
+      }, 380);
+    },
+
+    bindAutoHide() {
+      if (!DOWN_HINT.el) return;
+
+      DOWN_HINT.baselineScrollY = window.scrollY || window.pageYOffset || 0;
+
+      DOWN_HINT.scrollHandler = () => {
+        const currentY = window.scrollY || window.pageYOffset || 0;
+        if (Math.abs(currentY - DOWN_HINT.baselineScrollY) >= CONFIG.DOWN_HINT_HIDE_AFTER_SCROLL_PX) {
+          DOWN_HINT.hide();
+        }
+      };
+
+      window.addEventListener("scroll", DOWN_HINT.scrollHandler, { passive: true });
+
+      const btn = $(".down-hint__button", DOWN_HINT.el);
+      if (btn) {
+        DOWN_HINT.clickHandler = (e) => {
+          e.preventDefault();
+
+          try {
+            window.scrollBy({
+              top: CONFIG.DOWN_HINT_SCROLL_ON_CLICK_PX,
+              left: 0,
+              behavior: "smooth"
+            });
+          } catch (_) {
+            window.scrollTo(0, (window.scrollY || 0) + CONFIG.DOWN_HINT_SCROLL_ON_CLICK_PX);
+          }
+
+          window.setTimeout(() => DOWN_HINT.hide(), 260);
+        };
+
+        btn.addEventListener("click", DOWN_HINT.clickHandler);
+      }
+
+      DOWN_HINT.hideTimer = window.setTimeout(() => {
+        DOWN_HINT.hide();
+      }, CONFIG.DOWN_HINT_VISIBLE_MS);
+    },
+
+    show() {
+      if (!CONFIG.DOWN_HINT_ENABLED) return;
+
+      const el = DOWN_HINT.ensureEl();
+      if (!el) return;
+
+      DOWN_HINT.clearTimers();
+      DOWN_HINT.unbindAutoHide();
+
+      DOWN_HINT.visible = true;
+      el.classList.remove("is-hiding");
+      el.setAttribute("aria-hidden", "false");
+
+      requestAnimationFrame(() => {
+        el.classList.add("is-visible");
+      });
+
+      DOWN_HINT.bindAutoHide();
+    }
   };
 
   /* ===========================
@@ -354,6 +662,11 @@ body.gate-on{
       CONTENT_GATE.unlocked = true;
       CONTENT_GATE.setSessionUnlocked();
       CONTENT_GATE.removeGate();
+
+      if (reason === "60s_watched") {
+        DOWN_HINT.show();
+      }
+
       log("Content unlocked:", reason);
     },
 
@@ -695,7 +1008,7 @@ body.gate-on{
         icon: "👁",
         title: "Agora",
         build() {
-          return `${randomInt(18, 57)} pessoas estão assistindo esse vídeo`;
+          return `${randomInt(18, 77)} pessoas estão assistindo esse vídeo`;
         }
       },
       {
@@ -703,13 +1016,6 @@ body.gate-on{
         title: "Compartilhamento",
         build() {
           return `${pickRandom(TOASTS.names)} compartilhou o programa no ${pickRandom(TOASTS.socials)}`;
-        }
-      },
-      {
-        icon: "★",
-        title: "Interesse recente",
-        build() {
-          return `${randomInt(6, 19)} pessoas clicaram para saber mais hoje`;
         }
       },
       {
