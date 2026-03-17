@@ -91,15 +91,14 @@
    - Na PRIMEIRA interação real em qualquer parte da página, desmuta o HERO diretamente
    - Usa pointerdown global para funcionar melhor em mobile/desktop
 
-   ✅ FIX MOBILE GLOBAL (2026-03-16) — APLICADO AGORA:
-   - Somente no MOBILE, HERO sem autoplay forçado
-   - Somente no MOBILE, HERO e galeria usam preload="metadata" (sem preload agressivo)
-   - Somente no MOBILE, observer NÃO pausa HERO por viewport da galeria
-   - Somente no MOBILE, observer NÃO pausa galeria por viewport do HERO
-   - Somente no MOBILE, pulse por intervalos desativado
-   - Somente no MOBILE, CTA pulse desativado
-   - Somente no MOBILE, scroll otimizado via requestAnimationFrame
-   - Desktop preservado EXATAMENTE como está
+   ✅ AJUSTE SOLICITADO (AGORA):
+   - Remove todos os botões com data-outbound="1", EXCETO o último da página
+
+   ✅ NOVO (2026-03-17) — TOASTS SOCIAIS ELEGANTES:
+   - Toasts aleatórios, leves e não-massivos
+   - Estilo translúcido com ícone de fundo
+   - Responsivo para desktop/mobile
+   - Sem interferir na lógica existente
    ========================================================================== */
 
 (() => {
@@ -191,6 +190,18 @@
     CONTENT_GATE_SESSION_KEY: "presell_gate_unlocked_v1",
     HERO_VIDEO_PIXEL_TRACKING: true,
     HERO_VIDEO_PROGRESS_POINTS: [25, 50, 75],
+
+    // ✅ TOASTS SOCIAIS
+    TOASTS_ENABLED: true,
+    TOASTS_MAX_VISIBLE: 1,
+    TOASTS_FIRST_DELAY_MIN_MS: 0,
+    TOASTS_FIRST_DELAY_MAX_MS: 2000,
+    TOASTS_INTERVAL_MIN_MS: 8000,
+    TOASTS_INTERVAL_MAX_MS: 16000,
+    TOASTS_VISIBLE_MS: 7200,
+    TOASTS_CHANCE_PER_CYCLE: 0.78,
+    TOASTS_RESPECT_GATE: false,
+
     DEBUG: false
   };
 
@@ -230,16 +241,15 @@
     }
   };
 
-  const ENV = {
-    isMobile() {
-      try {
-        const byMedia = window.matchMedia("(max-width: 991px), (hover: none) and (pointer: coarse)").matches;
-        const byUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(navigator.userAgent || "");
-        return byMedia || byUA;
-      } catch (_) {
-        return false;
-      }
-    }
+  const randomInt = (min, max) => {
+    const a = Math.ceil(min);
+    const b = Math.floor(max);
+    return Math.floor(Math.random() * (b - a + 1)) + a;
+  };
+
+  const pickRandom = (arr = []) => {
+    if (!Array.isArray(arr) || !arr.length) return null;
+    return arr[Math.floor(Math.random() * arr.length)];
   };
 
   /* ===========================
@@ -659,6 +669,356 @@ body.gate-on{
   };
 
   /* ===========================
+     ✅ TOASTS SOCIAIS
+     =========================== */
+
+  const TOASTS = {
+    injected: false,
+    root: null,
+    timerId: null,
+    activeCount: 0,
+    names: [
+      "João", "Maria", "Ana", "Carlos", "Fernanda", "Rafael", "Camila", "Lucas",
+      "Patrícia", "Bruna", "Juliana", "André", "Paula", "Renata", "Marcos",
+      "Daniele", "Bianca", "Gustavo", "Aline", "Felipe", "Larissa", "Tiago"
+    ],
+    socials: ["Instagram", "WhatsApp", "Facebook"],
+    templates: [
+      {
+        icon: "✓",
+        title: "Nova adesão",
+        build() {
+          return `${pickRandom(TOASTS.names)} aderiu ao programa`;
+        }
+      },
+      {
+        icon: "👁",
+        title: "Agora",
+        build() {
+          return `${randomInt(18, 57)} pessoas estão assistindo esse vídeo`;
+        }
+      },
+      {
+        icon: "↗",
+        title: "Compartilhamento",
+        build() {
+          return `${pickRandom(TOASTS.names)} compartilhou o programa no ${pickRandom(TOASTS.socials)}`;
+        }
+      },
+      {
+        icon: "★",
+        title: "Interesse recente",
+        build() {
+          return `${randomInt(6, 19)} pessoas clicaram para saber mais hoje`;
+        }
+      },
+      {
+        icon: "❤",
+        title: "Pais engajados",
+        build() {
+          return `${pickRandom(TOASTS.names)} salvou este conteúdo para ver com calma`;
+        }
+      }
+    ],
+
+    injectCSS() {
+      if (TOASTS.injected) return;
+      TOASTS.injected = true;
+
+      const css = `
+.toast-stack{
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 9998;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  pointer-events: none;
+  width: min(360px, calc(100vw - 24px));
+}
+
+.toast-item{
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  min-height: 70px;
+  padding: 14px 16px 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,.18);
+  background: rgba(15, 23, 42, .42);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 20px 48px rgba(0,0,0,.24);
+  color: #ffffff;
+  opacity: 0;
+  transform: translateY(16px) scale(.98);
+  transition: opacity 280ms ease, transform 280ms ease;
+}
+
+.toast-item.is-visible{
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.toast-item.is-leaving{
+  opacity: 0;
+  transform: translateY(8px) scale(.98);
+}
+
+.toast-item__bgicon{
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 56px;
+  font-weight: 800;
+  line-height: 1;
+  color: rgba(255,255,255,.08);
+  pointer-events: none;
+  user-select: none;
+}
+
+.toast-item__row{
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.toast-item__badge{
+  flex: 0 0 38px;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,.16);
+  background: rgba(255,255,255,.08);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.toast-item__content{
+  min-width: 0;
+  flex: 1;
+}
+
+.toast-item__title{
+  margin: 0 0 4px 0;
+  font-size: 12px;
+  line-height: 1.15;
+  font-weight: 800;
+  color: rgba(255,255,255,.78);
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+
+.toast-item__text{
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.4;
+  font-weight: 700;
+  color: rgba(255,255,255,.96);
+}
+
+.toast-item__progress{
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 100%;
+  background: linear-gradient(90deg, rgba(255,255,255,.42), rgba(255,255,255,.10));
+  transform-origin: left center;
+  animation: toastProgress linear forwards;
+}
+
+@keyframes toastProgress{
+  from{ transform: scaleX(1); }
+  to{ transform: scaleX(0); }
+}
+
+@media (max-width: 640px){
+  .toast-stack{
+    right: 12px;
+    left: 12px;
+    bottom: 12px;
+    width: auto;
+    align-items: stretch;
+  }
+
+  .toast-item{
+    border-radius: 16px;
+    min-height: 66px;
+    padding: 13px 14px;
+  }
+
+  .toast-item__bgicon{
+    font-size: 48px;
+    right: 8px;
+  }
+
+  .toast-item__badge{
+    width: 34px;
+    height: 34px;
+    border-radius: 11px;
+    flex-basis: 34px;
+    font-size: 15px;
+  }
+
+  .toast-item__text{
+    font-size: 13.5px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce){
+  .toast-item,
+  .toast-item__progress{
+    transition: none !important;
+    animation: none !important;
+  }
+}
+      `.trim();
+
+      const style = document.createElement("style");
+      style.setAttribute("data-presell", "social-toasts");
+      style.textContent = css;
+      document.head.appendChild(style);
+    },
+
+    ensureRoot() {
+      if (TOASTS.root) return TOASTS.root;
+
+      TOASTS.injectCSS();
+
+      const root = document.createElement("div");
+      root.className = "toast-stack";
+      root.setAttribute("aria-live", "polite");
+      root.setAttribute("aria-atomic", "false");
+      document.body.appendChild(root);
+
+      TOASTS.root = root;
+      return root;
+    },
+
+    canShow() {
+      if (!CONFIG.TOASTS_ENABLED) return false;
+      if (document.hidden) return false;
+      if (CONFIG.TOASTS_RESPECT_GATE && CONFIG.CONTENT_GATE_ENABLED && !CONTENT_GATE.unlocked) return false;
+      if (TOASTS.activeCount >= CONFIG.TOASTS_MAX_VISIBLE) return false;
+      return true;
+    },
+
+    buildToastData() {
+      const template = pickRandom(TOASTS.templates);
+      if (!template) return null;
+
+      return {
+        icon: template.icon || "•",
+        title: template.title || "Atualização",
+        text: template.build()
+      };
+    },
+
+    show(data) {
+      if (!data || !TOASTS.canShow()) return;
+
+      const root = TOASTS.ensureRoot();
+      const toast = document.createElement("div");
+      toast.className = "toast-item";
+      toast.setAttribute("role", "status");
+
+      toast.innerHTML = `
+<div class="toast-item__bgicon" aria-hidden="true">${data.icon}</div>
+<div class="toast-item__row">
+  <div class="toast-item__badge" aria-hidden="true">${data.icon}</div>
+  <div class="toast-item__content">
+    <p class="toast-item__title">${data.title}</p>
+    <p class="toast-item__text">${data.text}</p>
+  </div>
+</div>
+<div class="toast-item__progress" style="animation-duration:${CONFIG.TOASTS_VISIBLE_MS}ms"></div>
+      `.trim();
+
+      root.appendChild(toast);
+      TOASTS.activeCount += 1;
+
+      requestAnimationFrame(() => {
+        toast.classList.add("is-visible");
+      });
+
+      window.setTimeout(() => {
+        toast.classList.add("is-leaving");
+
+        window.setTimeout(() => {
+          try { toast.remove(); } catch (_) {}
+          TOASTS.activeCount = Math.max(0, TOASTS.activeCount - 1);
+        }, 320);
+      }, CONFIG.TOASTS_VISIBLE_MS);
+    },
+
+    maybeShow() {
+      if (!TOASTS.canShow()) return;
+      if (Math.random() > CONFIG.TOASTS_CHANCE_PER_CYCLE) return;
+
+      const data = TOASTS.buildToastData();
+      if (!data) return;
+
+      TOASTS.show(data);
+    },
+
+    getNextDelay(isFirst = false) {
+      if (isFirst) {
+        return randomInt(CONFIG.TOASTS_FIRST_DELAY_MIN_MS, CONFIG.TOASTS_FIRST_DELAY_MAX_MS);
+      }
+      return randomInt(CONFIG.TOASTS_INTERVAL_MIN_MS, CONFIG.TOASTS_INTERVAL_MAX_MS);
+    },
+
+    scheduleNext(isFirst = false) {
+      if (TOASTS.timerId) {
+        clearTimeout(TOASTS.timerId);
+        TOASTS.timerId = null;
+      }
+
+      const delay = TOASTS.getNextDelay(isFirst);
+
+      TOASTS.timerId = window.setTimeout(() => {
+        TOASTS.maybeShow();
+        TOASTS.scheduleNext(false);
+      }, delay);
+    },
+
+    bindVisibility() {
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) {
+          if (TOASTS.timerId) {
+            clearTimeout(TOASTS.timerId);
+            TOASTS.timerId = null;
+          }
+          return;
+        }
+
+        if (!TOASTS.timerId) {
+          TOASTS.scheduleNext(false);
+        }
+      });
+    },
+
+    bind() {
+      if (!CONFIG.TOASTS_ENABLED) return;
+
+      TOASTS.ensureRoot();
+      TOASTS.bindVisibility();
+      TOASTS.scheduleNext(true);
+
+      log("Social toasts bound.");
+    }
+  };
+
+  /* ===========================
      OUTBOUND / CTA MANAGER
      =========================== */
 
@@ -714,8 +1074,31 @@ body.gate-on{
       setTimeout(() => { window.location.href = finalUrl; }, 500);
     },
 
-    bind() {
+    keepOnlyLastCTA() {
       const buttons = $$("[data-outbound='1']");
+      if (!buttons.length) return [];
+
+      const lastButton = buttons[buttons.length - 1];
+
+      buttons.forEach((btn) => {
+        const isLast = btn === lastButton;
+
+        if (!isLast) {
+          try {
+            btn.remove();
+          } catch (_) {
+            try {
+              btn.style.display = "none";
+            } catch (_) {}
+          }
+        }
+      });
+
+      return lastButton ? [lastButton] : [];
+    },
+
+    bind() {
+      const buttons = OUTBOUND.keepOnlyLastCTA();
       buttons.forEach((btn) => { btn.addEventListener("click", OUTBOUND.handleClick); });
       log("Outbound buttons:", buttons.length);
     }
@@ -727,7 +1110,6 @@ body.gate-on{
 
   const SCROLL = {
     fired: new Set(),
-    ticking: false,
 
     getScrollPercent() {
       const doc = document.documentElement;
@@ -767,22 +1149,7 @@ body.gate-on{
     },
 
     bind() {
-      const useRAFThrottle = ENV.isMobile();
-
-      if (useRAFThrottle) {
-        window.addEventListener("scroll", () => {
-          if (SCROLL.ticking) return;
-
-          SCROLL.ticking = true;
-          requestAnimationFrame(() => {
-            SCROLL.onScroll(true);
-            SCROLL.ticking = false;
-          });
-        }, { passive: true });
-      } else {
-        window.addEventListener("scroll", () => SCROLL.onScroll(true), { passive: true });
-      }
-
+      window.addEventListener("scroll", () => SCROLL.onScroll(true), { passive: true });
       SCROLL.onScroll(false);
     }
   };
@@ -1088,10 +1455,6 @@ body.gate-on{
       if (!HOT_STICKY.el) return;
 
       HOT_STICKY.setVisible(false);
-
-      // ✅ MOBILE: mantém sticky, mas remove o loop de pulse por intervalo
-      if (ENV.isMobile()) return;
-
       HOT_STICKY.pulseTimer = setInterval(() => HOT_STICKY.pulse(), CONFIG.HOT_STICKY_PULSE_EVERY_MS);
     }
   };
@@ -1136,9 +1499,6 @@ body.gate-on{
     firedAtLeastOnce: false,
 
     pulseAll() {
-      // ✅ MOBILE: desativa CTA pulse para aliviar CPU / repaints
-      if (ENV.isMobile()) return;
-
       const now = nowTs();
       if (now - HOT_CTA_PULSE.lastPulseTs < CONFIG.HOT_CTA_PULSE_COOLDOWN_MS) return;
 
@@ -1154,9 +1514,6 @@ body.gate-on{
     },
 
     maybePulse(scrollPct) {
-      // ✅ MOBILE: sem pulse em scroll
-      if (ENV.isMobile()) return;
-
       if (scrollPct >= CONFIG.HOT_CTA_PULSE_AFTER_SCROLL_PCT) {
         if (!HOT_CTA_PULSE.firedAtLeastOnce) {
           HOT_CTA_PULSE.firedAtLeastOnce = true;
@@ -1441,10 +1798,6 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
       return $$("video.hero-video");
     },
 
-    isMobileContext() {
-      return ENV.isMobile();
-    },
-
     safePause(v) {
       if (!v) return;
       try { v.pause(); } catch (_) {}
@@ -1598,49 +1951,6 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
       });
     },
 
-    /* ===========================
-       MOBILE LIGHT MODE
-       - HERO sem autoplay forçado
-       - preload leve
-       - galeria leve
-       =========================== */
-    applyMobileVideoOptimizations() {
-      if (!VIDEO_MANAGER.isMobileContext()) return;
-
-      VIDEO_MANAGER.allVideos.forEach((videoEl) => {
-        if (!videoEl) return;
-
-        try {
-          videoEl.preload = "metadata";
-          videoEl.setAttribute("preload", "metadata");
-        } catch (_) {}
-      });
-
-      if (VIDEO_MANAGER.heroVideo) {
-        try { VIDEO_MANAGER.heroVideo.autoplay = false; } catch (_) {}
-        try { VIDEO_MANAGER.heroVideo.removeAttribute("autoplay"); } catch (_) {}
-        try {
-          VIDEO_MANAGER.heroVideo.preload = "metadata";
-          VIDEO_MANAGER.heroVideo.setAttribute("preload", "metadata");
-        } catch (_) {}
-
-        // Mantém o HERO em estado previsível no mobile:
-        // nada de tentar sair correndo sozinho igual estagiário no primeiro dia.
-        try {
-          if (!VIDEO_MANAGER.heroVideo.paused) VIDEO_MANAGER.heroVideo.pause();
-        } catch (_) {}
-      }
-
-      VIDEO_MANAGER.testimonialVideos.forEach((videoEl) => {
-        if (!videoEl) return;
-
-        try {
-          videoEl.preload = "metadata";
-          videoEl.setAttribute("preload", "metadata");
-        } catch (_) {}
-      });
-    },
-
     forceHeroMutedForAutoplay() {
       if (!VIDEO_MANAGER.heroVideo) return;
 
@@ -1783,13 +2093,6 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
     tryHeroAutoplay() {
       if (!CONFIG.VIDEO_AUTOPLAY_ENABLED) return;
       if (!VIDEO_MANAGER.heroVideo) return;
-
-      // ✅ MOBILE: sem autoplay forçado, sem preload agressivo, sem cascata de tentativas
-      if (VIDEO_MANAGER.isMobileContext()) {
-        VIDEO_MANAGER.applyMobileVideoOptimizations();
-        return;
-      }
-
       VIDEO_MANAGER.scheduleHeroAutoplayAttempts();
     },
 
@@ -1812,9 +2115,6 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
       VIDEO_MANAGER.testimonialsSection = $(".video-gallery");
 
       if (!VIDEO_MANAGER.heroSection || !VIDEO_MANAGER.testimonialsSection) return;
-
-      // ✅ MOBILE: desativa auto-pause por viewport entre HERO e galeria
-      if (VIDEO_MANAGER.isMobileContext()) return;
 
       const obs = new IntersectionObserver(
         (entries) => {
@@ -1848,7 +2148,6 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
 
       if (!VIDEO_MANAGER.allVideos.length) return;
 
-      VIDEO_MANAGER.applyMobileVideoOptimizations();
       VIDEO_MANAGER.bindGlobalUnlock();
       VIDEO_MANAGER.bindPauseOthersOnPlay();
       VIDEO_MANAGER.bindSectionFocusAutoPause();
@@ -2222,6 +2521,7 @@ Motivo provável: arquivo inexistente (404), nome com letras diferentes (case) o
       VIDEO_UI.bind();
       VIDEO_GALLERY.bind();
       HERO_VIDEO_PIXEL.bind();
+      TOASTS.bind();
 
       INIT.fireInitialPixels();
       OUTBOUND.bind();
